@@ -10,8 +10,10 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "rec
 import { Play, Pause, RotateCcw, Shuffle, Gauge, CircleDot } from "lucide-react";
 
 // ----------------------- Utility -----------------------
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-
+const clamp = (v: number, lo: number, hi: number) => {
+    const n = Number.isFinite(v) ? Math.trunc(v) : lo;
+    return Math.max(lo, Math.min(hi, n));
+};
 function gaussianRandom(mean = 0, std = 1) {
     // Box-Muller
     let u = 0, v = 0;
@@ -37,15 +39,8 @@ function buildAdjacency(type, N, p = 0.05) {
     }
     if (type === "ring") {
         for (let i = 0; i < N; i++) {
-            const left  = (i - 1 + N) % N;
-            const right = (i + 1) % N;
-            if (left === right) {
-                // Happens when N === 2 → the only neighbor is the other node
-                adj[i].push(left);
-            } else {
-                adj[i].push(left);
-                adj[i].push(right);
-            }
+            adj[i].push((i - 1 + N) % N);
+            adj[i].push((i + 1) % N);
         }
         return adj;
     }
@@ -66,11 +61,12 @@ function buildAdjacency(type, N, p = 0.05) {
 // ----------------------- Main Component -----------------------
 export default function KuramotoLive() {
     // ---- Parameters ----
-    const [N, setN] = useState(5); // number of oscillators
+    const [N, setN] = useState(200); // number of oscillators
     const [K, setK] = useState(1.2); // coupling strength
     const [dt, setDt] = useState(0.02); // integration step (s)
     const [noise, setNoise] = useState(0); // white noise amplitude
     const [omegaMode, setOmegaMode] = useState("gaussian"); // gaussian | cauchy | uniform
+    const [omegaText, setOmegaText] = useState<string>("");
     const [gaussStd, setGaussStd] = useState(0.6);
     const [cauchyGamma, setCauchyGamma] = useState(0.5);
     const [uniRange, setUniRange] = useState(1.0);
@@ -83,10 +79,6 @@ export default function KuramotoLive() {
     const [running, setRunning] = useState(false);
     const [showCentroid, setShowCentroid] = useState(true);
     const [showLabels, setShowLabels] = useState(false);
-    const showCentroidRef = useRef(showCentroid);
-    const showLabelsRef = useRef(showLabels);
-    useEffect(() => { showCentroidRef.current = showCentroid; }, [showCentroid]);
-    useEffect(() => { showLabelsRef.current = showLabels; }, [showLabels]);
     const [speed, setSpeed] = useState(1); // sim speed multiplier
 
     const canvasRef = useRef(null);
@@ -103,30 +95,16 @@ export default function KuramotoLive() {
 
     // Regenerate arrays when N changes
     useEffect(() => {
-        // Reallocate arrays
         thetaRef.current = new Float64Array(N);
         omegaRef.current = new Float64Array(N);
         randomizePhases();
         randomizeFrequencies();
         adjRef.current = buildAdjacency(topology, N, erProb);
-
-        // Reset clocks
-        tRef.current = 0;
-        accRef.current = 0;
-        lastFrameTimeRef.current = performance.now?.() ?? 0;
-
-        // Seed chart so there’s data immediately
         rBufferRef.current = [];
-        const { r } = computeOrder(thetaRef.current);
-        rBufferRef.current.push({ t: 0, r });
-
-        // Force a React update so Recharts gets a fresh data reference
-        setChartTick(t => (t + 1) % 1_000_000);
-
-        // Redraw once (handles paused state)
+        tRef.current = 0;
         draw();
-        // Note: do NOT setRunning(false); leave it as-is.
-    }, [N]); // (and keep your separate effects for topology/erProb)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [N]);
 
     // Rebuild adjacency when topology / prob changes
     useEffect(() => {
@@ -241,7 +219,7 @@ export default function KuramotoLive() {
         const { r, psi } = computeOrder(th);
 
         // draw centroid vector
-        if (showCentroidRef.current) {
+        if (showCentroid) {
             ctx.save();
             ctx.translate(cx, cy);
             ctx.beginPath();
@@ -263,7 +241,7 @@ export default function KuramotoLive() {
         }
         ctx.fill();
 
-        if (showLabelsRef.current && th.length <= 100) {
+        if (showLabels && th.length <= 100) {
             ctx.font = `${12 * dpr}px ui-sans-serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
@@ -282,8 +260,8 @@ export default function KuramotoLive() {
             const last = lastFrameTimeRef.current;
             lastFrameTimeRef.current = now;
 
-            let elapsed = (now - last) / 1000;
-            if (!isFinite(elapsed) || elapsed > 0.5) elapsed = 0;
+            let elapsed = (now - last) / 1000; // seconds
+            if (!isFinite(elapsed) || elapsed > 0.5) elapsed = 0; // guard large jumps
 
             accRef.current += elapsed * speed;
 
@@ -295,6 +273,7 @@ export default function KuramotoLive() {
                 steps++;
             }
 
+            // ↓ trigger React re-render for the chart at ~20 Hz of sim time
             if (steps > 0 && (tRef.current - lastChartUpdateRef.current) > 0.05) {
                 lastChartUpdateRef.current = tRef.current;
                 setChartTick(t => (t + 1) % 1_000_000);
@@ -303,10 +282,11 @@ export default function KuramotoLive() {
             draw();
             rafRef.current = requestAnimationFrame(loop);
         };
+
         rafRef.current = requestAnimationFrame(loop);
         return () => cancelAnimationFrame(rafRef.current);
-    }, [running, dt, speed, K, noise, showCentroid, showLabels, N]);
-
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [running, dt, speed, K, noise]);
 
     // Ensure a draw on param tweaks even when paused
     useEffect(() => { draw(); });
@@ -348,24 +328,19 @@ export default function KuramotoLive() {
 
     function handleReseedFrequencies() {
         randomizeFrequencies();
-
-        // also reset graph
+        rBufferRef.current = [];
         tRef.current = 0;
         accRef.current = 0;
-        rBufferRef.current = [];
-        const { r } = computeOrder(thetaRef.current);
-        rBufferRef.current.push({ t: 0, r });
-        lastChartUpdateRef.current = 0;
-        setChartTick(t => (t + 1) % 1_000_000);
-
         draw();
     }
 
     // Build chart data memoized
     const chartData = useMemo(
         () => rBufferRef.current.map(p => ({ t: p.t, r: p.r })),
-        [chartTick]
+        [chartTick] // re-render chart when we bump the tick
     );
+
+
 
 
 
@@ -426,8 +401,8 @@ export default function KuramotoLive() {
 
                         <div className="grid grid-cols-7 items-center gap-3">
                             <Label className="col-span-3">Oscillators (N)</Label>
-                            <Input type="number" className="col-span-4" value={N} min={2} max={2000}
-                                   onChange={(e) => setN(clamp(parseInt(e.target.value || "0"), 2, 2000))} />
+                            <Input type="number" className="col-span-4" value={N} min={5} max={2000}
+                                   onChange={(e) => setN(clamp(parseInt(e.target.value || "0"), 5, 2000))} />
                         </div>
 
                         <div className="grid gap-2">
