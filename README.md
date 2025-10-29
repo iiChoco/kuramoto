@@ -1,6 +1,6 @@
 # Kuramoto Model
 
-This is a simple program used to analyze the synchronization behavior of a system of coupled oscillators based on the Kuramoto model. The synchrocity of the oscillators at any given time is measured by the order parameter.
+This is a simple program used to analyze the synchronization behavior of a system of coupled oscillators based on the Kuramoto model. The synchronicity of the oscillators at any given time is measured by the order parameter.
 
 Currently, three toplogies are implemented between oscsillators:
 - All-to-All
