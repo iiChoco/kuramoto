@@ -83,7 +83,7 @@ export default function KuramotoLive() {
     const [nText, setNText] = useState(String(N));
 
     // Phases (θ) init controls
-    const [phaseMode, setPhaseMode] = useState<"uniform"|"zero"|"linear"|"two-cluster"|"manual">("uniform");
+    const [phaseMode, setPhaseMode] = useState<"uniform"|"zero"|"linear"|"two-cluster"|"manual">("linear");
     const [phaseText, setPhaseText] = useState<string>("");
     const [clusterSpread, setClusterSpread] = useState<number>(20); // degrees, for two-cluster spread
     const [resetOnPhaseApply, setResetOnPhaseApply] = useState<boolean>(true);
@@ -231,7 +231,7 @@ export default function KuramotoLive() {
 
     useEffect(() => {
         if (omegaMode === "manual") {
-            setOmegaText(formatiOmegaList());
+            setOmegaText(formatOmegaList());
         }
     }, [omegaMode, N])
 
@@ -317,7 +317,7 @@ export default function KuramotoLive() {
         return { r, psi };
     }
 
-    function formatiOmegaList(): string {
+    function formatOmegaList(): string {
         const w = omegaRef.current;
         const max = Math.min(w.length, 2000);
         const arr: string[] = new Array(max);
