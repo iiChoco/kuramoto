@@ -29,7 +29,7 @@ function cauchyRandom(x0 = 0, gamma = 1) {
     return x0 + gamma * Math.tan(Math.PI * u);
 }
 
-function buildAdjacency(type, N, p = 0.05) {
+function buildAdjacency(type: string, N: number, p = 0.05): number[][] | null {
     // returns adjacency list (array of arrays of neighbors)
     const adj = new Array(N);
     for (let i = 0; i < N; i++) adj[i] = [];
@@ -96,15 +96,14 @@ export default function KuramotoLive() {
     const [showLabels, setShowLabels] = useState(false);
     const [speed, setSpeed] = useState(1); // sim speed multiplier
 
-    const canvasRef = useRef(null);
-    const rafRef = useRef(0);
+    const canvasRef = useRef<HTMLCanvasElement | null>(null);    const rafRef = useRef(0);
     const accRef = useRef(0);
 
     const thetaRef = useRef(new Float64Array(N));
     const omegaRef = useRef(new Float64Array(N));
     const adjRef = useRef<number[][] | null>(null);
 
-    const rBufferRef = useRef([]); // {t, r}
+    const rBufferRef = useRef<Array<{ t: number; r: number }>>([]); // t, r
     const tRef = useRef(0);
     const lastFrameTimeRef = useRef(typeof performance !== "undefined" ? performance.now() : 0);
     const [perOscView, setPerOscView] = useState(false);
@@ -497,7 +496,7 @@ export default function KuramotoLive() {
     }
 
     // ---- Core math: order parameter ----
-    function computeOrder(th) {
+    function computeOrder(th: Float64Array) {
         let cx = 0, sx = 0;
         for (let i = 0; i < th.length; i++) {
             cx += Math.cos(th[i]);
@@ -568,7 +567,7 @@ export default function KuramotoLive() {
 
 
     // ---- Integrator ----
-    function stepSimulation(h) {
+    function stepSimulation(h: number) {
         const th = thetaRef.current;
         const w = omegaRef.current;
         const adj = adjRef.current; // null => all-to-all fast path

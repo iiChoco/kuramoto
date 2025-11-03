@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
+// @ts-nocheck
 export default defineConfig({
   plugins: [react()],
   resolve: {

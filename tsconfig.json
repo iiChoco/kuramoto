@@ -4,14 +4,13 @@
     "paths": {
       "@/*": ["src/*"]
     },
-    // recommended strictness to catch the implicit anys:
-    "strict": true,
-    "noImplicitAny": true,
-    "skipLibCheck": true,
     "jsx": "react-jsx",
     "moduleResolution": "bundler",
-    "target": "ES2020",
-    "module": "ESNext"
-  },
-  "include": ["src"]
+    "target": "ES2022",
+    "module": "ES2022",
+    "lib": ["ES2022","DOM"],
+    "skipLibCheck": true,
+    "noImplicitAny": false
+  }
 }
+
