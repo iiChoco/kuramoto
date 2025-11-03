@@ -102,7 +102,7 @@ export default function KuramotoLive() {
 
     const thetaRef = useRef(new Float64Array(N));
     const omegaRef = useRef(new Float64Array(N));
-    const adjRef = useRef(null);
+    const adjRef = useRef<number[][] | null>(null);
 
     const rBufferRef = useRef([]); // {t, r}
     const tRef = useRef(0);
