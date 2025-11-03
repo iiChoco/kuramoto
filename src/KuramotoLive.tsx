@@ -64,6 +64,7 @@ function buildAdjacency(type, N, p = 0.05) {
     return null;
 }
 
+
 // ----------------------- Main Component -----------------------
 export default function KuramotoLive() {
     // ---- Parameters ----
@@ -199,6 +200,197 @@ export default function KuramotoLive() {
         }
     }
 
+
+
+// --- Clipboard / export helpers ---
+
+    function canClipboardWriteImages() {
+        // Must be a secure context, with clipboard.write and ClipboardItem available
+        return (window.isSecureContext &&
+            navigator.clipboard &&
+            "write" in navigator.clipboard &&
+            typeof window.ClipboardItem !== "undefined");
+    }
+
+
+    const chartHostRef = useRef<HTMLDivElement | null>(null);
+
+    function rSeriesToCSV() {
+        const buf = rBufferRef.current ?? [];
+        return "t,r\n" + buf.map(p => `${p.t},${p.r}`).join("\n");
+    }
+    function rSeriesToTSV() {
+        const buf = rBufferRef.current ?? [];
+        return "t\tr\n" + buf.map(p => `${p.t}\t${p.r}`).join("\n");
+    }
+
+    async function copyCSV() {
+        await navigator.clipboard.writeText(rSeriesToCSV());
+    }
+
+    async function copyTSV() {
+        await navigator.clipboard.writeText(rSeriesToTSV());
+    }
+
+    function downloadCSV() {
+        const blob = new Blob([rSeriesToCSV()], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "r_series.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    }
+
+    async function copyChartImage() {
+        const host = chartHostRef.current;
+        if (!host) return alert("Chart container not found.");
+
+        // If the browser can’t write image blobs, fall back immediately to a download
+        if (!canClipboardWriteImages()) {
+            await downloadChartPNG(host);
+            return;
+        }
+
+        try {
+            await copyChartImageFromHost(host); // tries SVG→PNG to clipboard
+            // If it silently fails in some browsers, force a tiny delay to surface DOMException
+            await Promise.resolve();
+        } catch (err: any) {
+            console.error("clipboard write failed:", err);
+            await downloadChartPNG(host); // graceful fallback
+        }
+    }
+
+
+    function cloneAndNormalizeChartSVG(src: SVGSVGElement) {
+        const clone = src.cloneNode(true) as SVGSVGElement;
+        clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+
+        // Ensure size
+        let vb = clone.getAttribute("viewBox");
+        const rect = src.getBoundingClientRect();
+        const width = parseInt(clone.getAttribute("width") || "", 10) || Math.max(1, Math.round(rect.width)) || 800;
+        const height = parseInt(clone.getAttribute("height") || "", 10) || Math.max(1, Math.round(rect.height)) || 400;
+        clone.setAttribute("width", String(width));
+        clone.setAttribute("height", String(height));
+        if (!vb) {
+            clone.setAttribute("viewBox", `0 0 ${width} ${height}`);
+            vb = clone.getAttribute("viewBox")!;
+        }
+
+        // Inline minimal computed styles so canvas draw is faithful
+        const inline = (el: Element) => {
+            const cs = window.getComputedStyle(el as Element);
+            const target = el as HTMLElement;
+            ["fill","stroke","stroke-width","opacity","font-family","font-size","font-weight","stroke-linecap","stroke-linejoin"]
+                .forEach(k => {
+                    const v = cs.getPropertyValue(k);
+                    if (v) target.style.setProperty(k, v);
+                });
+            for (const child of Array.from(el.children)) inline(child);
+        };
+        inline(clone);
+
+        return { clone, width, height };
+    }
+
+    async function copyChartImageFromHost(host: HTMLDivElement | null) {
+        if (!host) return alert("Chart container not found.");
+        const svg =
+            host.querySelector<SVGSVGElement>(".recharts-wrapper svg") ||
+            host.querySelector("svg");
+        if (!svg) return alert("SVG not found (chart not rendered yet).");
+
+        const { clone, width, height } = cloneAndNormalizeChartSVG(svg);
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(clone)}`;
+        const svgBlob = new Blob([xml], { type: "image/svg+xml" });
+
+        // Try direct SVG copy first
+        try {
+            // @ts-ignore
+            await navigator.clipboard.write([new ClipboardItem({ [svgBlob.type]: svgBlob })]);
+            return;
+        } catch {/* pass */}
+
+        // Fallback: rasterize → PNG → clipboard
+        const url = URL.createObjectURL(svgBlob);
+        try {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = rej; img.src = url; });
+
+            const scale = 2;
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.max(1, Math.floor(width * scale));
+            canvas.height = Math.max(1, Math.floor(height * scale));
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return alert("Canvas 2D context not available.");
+            // Optional white bg so it’s not transparent
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            const pngBlob: Blob = await new Promise(res => canvas.toBlob(b => res(b as Blob), "image/png"));
+            // @ts-ignore
+            await navigator.clipboard.write([new ClipboardItem({ [pngBlob.type]: pngBlob })]);
+        } finally {
+            URL.revokeObjectURL(url);
+        }
+    }
+
+    function downloadChartSVG(host: HTMLDivElement | null) {
+        if (!host) return;
+        const svg =
+            host.querySelector<SVGSVGElement>(".recharts-wrapper svg") ||
+            host.querySelector("svg");
+        if (!svg) return;
+        const { clone } = cloneAndNormalizeChartSVG(svg);
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(clone)}`;
+        const blob = new Blob([xml], { type: "image/svg+xml" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = "r_chart.svg";
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+    }
+
+    async function downloadChartPNG(host: HTMLDivElement | null) {
+        if (!host) return;
+        const svg =
+            host.querySelector<SVGSVGElement>(".recharts-wrapper svg") ||
+            host.querySelector("svg");
+
+        if (!svg) return;
+        const { clone, width, height } = cloneAndNormalizeChartSVG(svg);
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(clone)}`;
+        const svgBlob = new Blob([xml], { type: "image/svg+xml" });
+        const url = URL.createObjectURL(svgBlob);
+        try {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = rej; img.src = url; });
+
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.max(1, Math.floor(width));
+            canvas.height = Math.max(1, Math.floor(height));
+            const ctx = canvas.getContext("2d")!;
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            const pngBlob: Blob = await new Promise(res => canvas.toBlob(b => res(b as Blob), "image/png"));
+            const dl = URL.createObjectURL(pngBlob);
+            const a = document.createElement("a");
+            a.href = dl; a.download = "r_chart.png";
+            document.body.appendChild(a); a.click(); a.remove();
+            URL.revokeObjectURL(dl);
+        } finally {
+            URL.revokeObjectURL(url);
+        }
+    }
 
 
     const bumpUI = () => {
@@ -619,11 +811,30 @@ export default function KuramotoLive() {
 
                     <Card className="shadow-xl">
                         <CardContent className="p-4">
-                            <div className="flex items-center gap-2 mb-3">
-                                <Gauge className="w-5 h-5"/>
-                                <h3 className="text-lg font-semibold">Order Parameter r(t)</h3>
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                    <Gauge className="w-5 h-5"/>
+                                    <h3 className="text-lg font-semibold">Order Parameter r(t)</h3>
+                                </div>
+
+                                {/* --- Export / Copy toolbar --- */}
+                                <div className="flex gap-2">
+                                    <Button size="sm" variant="outline" onClick={copyChartImage}>
+                                        Copy chart image
+                                    </Button>
+                                    <Button size="sm" variant="outline" onClick={copyCSV} title="Comma separated">
+                                        Copy CSV
+                                    </Button>
+                                    <Button size="sm" variant="outline" onClick={copyTSV} title="Tab separated (great for Sheets/Excel)">
+                                        Copy TSV
+                                    </Button>
+                                    <Button size="sm" variant="secondary" onClick={downloadCSV}>
+                                        Download CSV
+                                    </Button>
+                                </div>
                             </div>
-                            <div className="w-full h-64">
+
+                            <div className="w-full h-64" ref={chartHostRef}>
                                 <ResponsiveContainer width="100%" height="100%">
                                     <LineChart data={chartData} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
                                         <XAxis dataKey="t" tickFormatter={(v) => v.toFixed(1)} label={{ value: "t", position: "insideRight", offset: -2, dy: 12}} />
